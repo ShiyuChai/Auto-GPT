@@ -173,51 +173,7 @@ def update_challenges_already_beaten(
         json.dump(challenge_data, f, indent=4)
 
 
-def generate_separate_suite_reports(suite_reports: dict) -> None:
-    for prefix, suite_file_datum in suite_reports.items():
-        successes = []
-        run_time = 0.0
-        data = {}
-
-        info_details: Any = {
-            "data_path": "",
-            "metrics": {
-                "percentage": 0,
-                "highest_difficulty": "",
-                "run_time": "0 seconds",
-            },
-            "tests": {},
-        }
-
-        for name in suite_file_datum:
-            test_data = INFO_MANAGER.tests[name]  # get the individual test reports
-            data[name] = test_data  # this is for calculating highest difficulty
-            INFO_MANAGER.remove_test(name)
-
-            successes.append(test_data["metrics"]["success"])
-            run_time += float(test_data["metrics"]["run_time"].split(" ")[0])
-
-            info_details["tests"][name] = test_data
-
-        info_details["metrics"]["percentage"] = round(
-            (sum(successes) / len(successes)) * 100, 2
-        )
-        info_details["metrics"]["run_time"] = f"{str(round(run_time, 3))} seconds"
-        info_details["metrics"]["highest_difficulty"] = get_highest_success_difficulty(
-            data, just_string=True
-        )
-        suite_path = (
-            Path(next(iter(data.values()))["data_path"]).resolve().parent.parent
-        )
-        info_details["data_path"] = get_test_path(suite_path)
-        INFO_MANAGER.add_test(prefix, info_details)
-
-
 def session_finish(suite_reports: dict) -> None:
-    flags = "--test" in sys.argv or "--maintain" in sys.argv or "--improve" in sys.argv
-    if not flags:
-        generate_separate_suite_reports(suite_reports)
-
     agent_benchmark_config = get_agent_benchmark_config()
 
     INTERNAL_INFO_MANAGER.save()
