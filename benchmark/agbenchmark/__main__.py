@@ -11,11 +11,8 @@ import pytest
 import toml
 from helicone.lock import HeliconeLockManager
 
-from agbenchmark.app import app
+from agbenchmark.reports.ReportManager import SingletonReportManager
 from agbenchmark.utils.data_types import AgentBenchmarkConfig
-
-from .reports.ReportManager import ReportManager
-from .utils.data_types import AgentBenchmarkConfig
 
 BENCHMARK_START_TIME_DT = datetime.now(timezone.utc)
 BENCHMARK_START_TIME = BENCHMARK_START_TIME_DT.strftime("%Y-%m-%dT%H:%M:%S+00:00")
@@ -24,50 +21,6 @@ CHALLENGES_ALREADY_BEATEN = (
     Path.cwd() / "agbenchmark_config" / "challenges_already_beaten.json"
 )
 UPDATES_JSON_PATH = Path.cwd() / "agbenchmark_config" / "updates.json"
-
-
-def get_agent_benchmark_config() -> AgentBenchmarkConfig:
-    agent_benchmark_config_path = str(Path.cwd() / "agbenchmark_config" / "config.json")
-    try:
-        with open(agent_benchmark_config_path, "r") as f:
-            agent_benchmark_config = AgentBenchmarkConfig(**json.load(f))
-            agent_benchmark_config.agent_benchmark_config_path = (
-                agent_benchmark_config_path
-            )
-            return agent_benchmark_config
-    except json.JSONDecodeError:
-        print("Error: benchmark_config.json is not a valid JSON file.")
-        raise
-
-
-def get_report_managers() -> tuple[ReportManager, ReportManager, ReportManager]:
-    agent_benchmark_config = get_agent_benchmark_config()
-    # tests that consistently pass are considered regression tests
-    REGRESSION_MANAGER = ReportManager(
-        agent_benchmark_config.get_regression_reports_path(), BENCHMARK_START_TIME_DT
-    )
-
-    # print(f"Using {REPORTS_PATH} for reports")
-    # user facing reporting information
-    INFO_MANAGER = ReportManager(
-        str(
-            agent_benchmark_config.get_reports_path(
-                benchmark_start_time=BENCHMARK_START_TIME_DT
-            )
-            / "report.json"
-        ),
-        BENCHMARK_START_TIME_DT,
-    )
-
-    # internal db step in replacement track pass/fail rate
-    INTERNAL_INFO_MANAGER = ReportManager(
-        agent_benchmark_config.get_success_rate_path(), BENCHMARK_START_TIME_DT
-    )
-
-    return REGRESSION_MANAGER, INFO_MANAGER, INTERNAL_INFO_MANAGER
-
-
-(REGRESSION_MANAGER, INFO_MANAGER, INTERNAL_INFO_MANAGER) = get_report_managers()
 
 
 if os.environ.get("HELICONE_API_KEY"):
@@ -122,6 +75,8 @@ def run_benchmark(
 ) -> int:
     """Start the benchmark tests. If a category flag is provided, run the categories with that mark."""
     # Check if configuration file exists and is not empty
+    initialize_updates_file()
+    SingletonReportManager()
     agent_benchmark_config_path = str(Path.cwd() / "agbenchmark_config" / "config.json")
     try:
         with open(agent_benchmark_config_path, "r") as f:
@@ -214,7 +169,8 @@ def run_benchmark(
     current_dir = Path(__file__).resolve().parent
     print(f"Current directory: {current_dir}")
     pytest_args.extend((str(current_dir), "--cache-clear"))
-    return pytest.main(pytest_args)
+    exit_code = pytest.main(pytest_args)
+    SingletonReportManager().clear_instance()
 
 
 @click.group(invoke_without_command=True)
@@ -314,11 +270,39 @@ def version():
     print(f"Benchmark Tool Version {version}")
 
 
-def serve():
-    import uvicorn
+from pathlib import Path
 
-    # Run the FastAPI application using uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8080)
+# class CustomStatReload(StatReload):
+#     def __init__(self, *args, **kwargs):
+#         super().__init__(*args, **kwargs)
+#         # Overriding the directories to watch
+#         self.dirs = [Path(__file__).absolute().parent]
+
+# def serve():
+#     current_file_path = Path(__file__).absolute().parent
+#     config = Config(
+#         "agbenchmark.app:app",    # Reference to your FastAPI application
+#         host="localhost",         # Host to bind
+#         port=8080,                # Port to bind
+#         reload=True,              # Enable reload
+#         log_level="info",         # Logging level
+#         # reload_dirs=[str(current_file_path)],  # Directories to watch
+#     )
+#     server = Server(config)
+#     server.run()
+
+
+def initialize_updates_file():
+    if os.path.exists(UPDATES_JSON_PATH):
+        # If the file already exists, overwrite it with an empty list
+        with open(UPDATES_JSON_PATH, "w") as file:
+            json.dump([], file, indent=2)
+        print("Initialized updates.json by overwriting with an empty array")
+    else:
+        # If the file doesn't exist, create it and write an empty list
+        with open(UPDATES_JSON_PATH, "w") as file:
+            json.dump([], file, indent=2)
+        print("Created updates.json and initialized it with an empty array")
 
 
 if __name__ == "__main__":

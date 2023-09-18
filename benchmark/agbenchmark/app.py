@@ -10,11 +10,11 @@ from fastapi import (
 from fastapi import Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
-# from agbenchmark.app import app
+from agbenchmark.execute_sub_process import execute_subprocess
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fastapi import FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, Extra
 
 # Change the current working directory to the benchmark path
 # home_path = find_absolute_benchmark_path()
@@ -27,6 +27,9 @@ class CreateReportRequest(BaseModel):
     tests: Optional[List[str]] = []
     category: Optional[str] = []
     mock: Optional[bool] = False
+
+    class Config:
+        extra = Extra.forbid  # this will forbid any extra fields
 
 
 updates_list = []
@@ -50,25 +53,29 @@ app.add_middleware(
 )
 
 
+def stream_output(pipe):
+    for line in pipe:
+        print(line, end="")
+
+
 @app.post("/reports")
 def run_single_test(body: CreateReportRequest) -> Any:
-    from agbenchmark.__main__ import run_benchmark
-
+    print(body.dict())
     # it's a hack because other parts of the code are using sys.argv
-    sys.argv = [sys.argv[0]]
-    sys.argv.append("start")
+    print(os.getcwd())
+    command_options = ["agbenchmark"]
     if body.category:
         sys.argv.append(f"--category={body.category}")
     for body_test in body.tests:
-        sys.argv.append(f"--test={body_test}")
-    categories = None
+        command_options.append(f"--test={body_test}")
     if body.category:
         categories = tuple([body.category])
 
-    run_benchmark(category=categories, mock=body.mock, test=tuple(body.tests))
+    execute_subprocess(command_options, 200)
     import json
     from pathlib import Path
 
+    print("finished running")
     # List all folders in the current working directory
     path_reports = Path.cwd() / "agbenchmark_config" / "reports"
     folders = [folder for folder in path_reports.iterdir() if folder.is_dir()]
@@ -82,6 +89,7 @@ def run_single_test(body: CreateReportRequest) -> Any:
     # Read report.json from this folder
     if last_folder:
         report_path = last_folder / "report.json"
+        print(report_path)
         if report_path.exists():
             with report_path.open() as file:
                 data = json.load(file)
